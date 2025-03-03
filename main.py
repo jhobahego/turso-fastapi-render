@@ -1,19 +1,31 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from libsql_client import create_client, Client, ResultSet
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
+from contextlib import asynccontextmanager
 
 load_dotenv()
-
-app = FastAPI()
 
 # Configuración de la conexión a Turso
 client: Client = create_client(
     url=os.getenv("TURSO_DATABASE_URL", ""),
     auth_token=os.getenv("TURSO_AUTH_TOKEN", "")
 )
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Crear tabla si no existe
+    await client.execute("""
+        CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL
+        )
+    """)
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 # Modelo Pydantic para las notas
 class NoteModel(BaseModel):
@@ -22,16 +34,6 @@ class NoteModel(BaseModel):
 class NoteResponse(BaseModel):
     id: int
     content: str
-
-@app.on_event("startup")
-async def startup() -> None:
-    # Crear tabla si no existe
-    await client.execute("""
-        CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            content TEXT NOT NULL
-        )
-    """)
 
 @app.get("/")
 async def root() -> Dict[str, str]:
